@@ -227,6 +227,13 @@ MNIST_loader = DataLoader(MNIST_train, batch_size=1000, shuffle=False)
 MNIST_testLoader = DataLoader(MNIST_test, batch_size=len(MNIST_test), shuffle=False)
 
 mozafari = MozafariMNIST2018()
+
+if torch.cuda.is_available():
+    print(torch.cuda.get_device_name(0))
+
+else:
+    print("CUDA is not available")
+
 if use_cuda:
     mozafari.cuda()
 
