@@ -32,31 +32,66 @@ use_cuda = True
 
 class MozafariMNIST2018(nn.Module):
     def __init__(self):
+        # Call the init function for nn.Module
         super(MozafariMNIST2018, self).__init__()
 
-        self.conv1 = snn.Convolution(6, 30, 5, 0.8, 0.05)
-        self.conv1_t = 15
-        self.k1 = 5
-        self.r1 = 3
+        # Setup Convolutional Layer 1 with 6 input channels
+        #     30 output channels (features) and a kernel size of 5x5 with a stride of 1
+        #   Random weights are assigned to each kernel using a normal distribution
+        #     with an average of 0.8 and a standard deviation of 0.05.
+        #
+        # The firing threshold for neurons in Conv1 is set to be 15
+        # Number of winners (kwta) for Conv1 is set to 5
+        # The inhibition radius for Conv1 is set to 3.
+        self.conv1 = snn.Convolution(in_channels=6, out_channels=30, kernel_size=5, weight_mean=0.8, weight_std=0.05)
+        self.conv1_threshold = 15
+        self.conv1_kwta = 5
+        self.conv1_inhibition_radius = 3
 
-        self.conv2 = snn.Convolution(30, 250, 3, 0.8, 0.05)
-        self.conv2_t = 10
-        self.k2 = 8
-        self.r2 = 1
+        # Setup Convolutional Layer 2 with 30 input channels, 
+        #     250 output channels (features) and a kernel size of 3x3 with a stride of 1.
+        #  Random weights are assigned to each kernel using a normal distriution
+        #     with an average of 0.8 and a standard deviation of 0.05. This is the same as Conv1 above.
+        #
+        #  The firing threshold for neurons in Conv2 is set to be 10
+        #  Number of winnders (kwta) for Conv2 is 8
+        #  The inhibition radius for Conv1 is 1
+        self.conv2 = snn.Convolution(in_channels=30, out_channels=250, kernel_size=3, weight_mean=0.8, weight_std=0.05)
+        self.conv2_threshold = 10
+        self.conv2_kwta = 8
+        self.conv2_inhibition_radius = 1
 
-        self.conv3 = snn.Convolution(250, 200, 5, 0.8, 0.05)
+        # Setup Convolutional Layer 3 with 250 input channels,
+        #     200 output channels (features) and a kernel size of 5x5 with a stride of 1.
+        #  Random weights are assigned to each kernel using a normal distriution
+        #     with an average of 0.8 and a standard deviation of 0.05. This is the same as Conv1 and Conv2 above. 
+        self.conv3 = snn.Convolution(in_channels=250, out_channels=200, kernel_size=5, weight_mean=0.8, weight_std=0.05)
 
-        self.stdp1 = snn.STDP(self.conv1, (0.004, -0.003))
-        self.stdp2 = snn.STDP(self.conv2, (0.004, -0.003))
-        self.stdp3 = snn.STDP(self.conv3, (0.004, -0.003), False, 0.2, 0.8)
-        self.anti_stdp3 = snn.STDP(self.conv3, (-0.004, 0.0005), False, 0.2, 0.8)
+        # Define STDP learning rates to use for unsupervised learning on Conv1 and Conv2
+        self.stdp1 = snn.STDP(conv_layer=self.conv1, learning_rate=(0.004, -0.003))
+        self.stdp2 = snn.STDP(conv_layer=self.conv2, learning_rate=(0.004, -0.003))
+
+        # Configure STDP and ANTI-STDP to emulate the behavior of R-STDP on Conv3
+        self.stdp3 = snn.STDP(conv_layer=self.conv3, learning_rate=(0.004, -0.003), use_stabilizer=False, lower_bound=0.2, upper_bound=0.8)
+        self.anti_stdp3 = snn.STDP(conv_layer=self.conv3, learning_rate=(-0.004, 0.0005), use_stabilizer=False, lower_bound=0.2, upper_bound=0.8)
+        
+        # Specify the max LTP learning rate of 0.15
+        #    The learning rate is doubled every 500 spikes and this
+        #     values sets the upper limit.
         self.max_ap = Parameter(torch.Tensor([0.15]))
 
+        # Initialize the decision map list with the following:
+        # [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+        # Unfortunately, I don't understand why this is necessary
         self.decision_map = []
         for i in range(10):
             self.decision_map.extend([i]*20)
 
         self.ctx = {"input_spikes":None, "potentials":None, "output_spikes":None, "winners":None}
+
+        # Counters to keep track of when to reset the learning rate for all feature maps.
+        #   The default is hardcoded to double the LTP learning rate every 500 spikes
+        #   These are utilized for the unsupervised learning on Conv1 and Conv2.
         self.spk_cnt1 = 0
         self.spk_cnt2 = 0
 
@@ -64,7 +99,7 @@ class MozafariMNIST2018(nn.Module):
         input = sf.pad(input.float(), (2,2,2,2), 0)
         if self.training:
             pot = self.conv1(input)
-            spk, pot = sf.fire(pot, self.conv1_t, True)
+            spk, pot = sf.fire(potentials=pot, threshold=self.conv1_threshold, return_thresholded_potentials=True)
             if max_layer == 1:
                 self.spk_cnt1 += 1
                 if self.spk_cnt1 >= 500:
@@ -75,7 +110,7 @@ class MozafariMNIST2018(nn.Module):
                     self.stdp1.update_all_learning_rate(ap.item(), an.item())
                 pot = sf.pointwise_inhibition(pot)
                 spk = pot.sign()
-                winners = sf.get_k_winners(pot, self.k1, self.r1, spk)
+                winners = sf.get_k_winners(potentials=pot, kwta=self.conv1_kwta, inhibition_radius=self.conv1_inhibition_radius, spikes=spk)
                 self.ctx["input_spikes"] = input
                 self.ctx["potentials"] = pot
                 self.ctx["output_spikes"] = spk
@@ -83,7 +118,7 @@ class MozafariMNIST2018(nn.Module):
                 return spk, pot
             spk_in = sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1))
             pot = self.conv2(spk_in)
-            spk, pot = sf.fire(pot, self.conv2_t, True)
+            spk, pot = sf.fire(pot, self.conv2_threshold, True)
             if max_layer == 2:
                 self.spk_cnt2 += 1
                 if self.spk_cnt2 >= 500:
@@ -94,7 +129,7 @@ class MozafariMNIST2018(nn.Module):
                     self.stdp2.update_all_learning_rate(ap.item(), an.item())
                 pot = sf.pointwise_inhibition(pot)
                 spk = pot.sign()
-                winners = sf.get_k_winners(pot, self.k2, self.r2, spk)
+                winners = sf.get_k_winners(pot, self.conv2_kwta, self.conv2_inhibition_radius, spk)
                 self.ctx["input_spikes"] = spk_in
                 self.ctx["potentials"] = pot
                 self.ctx["output_spikes"] = spk
@@ -114,11 +149,11 @@ class MozafariMNIST2018(nn.Module):
             return output
         else:
             pot = self.conv1(input)
-            spk, pot = sf.fire(pot, self.conv1_t, True)
+            spk, pot = sf.fire(pot, self.conv1_threshold, True)
             if max_layer == 1:
                 return spk, pot
             pot = self.conv2(sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1)))
-            spk, pot = sf.fire(pot, self.conv2_t, True)
+            spk, pot = sf.fire(pot, self.conv2_threshold, True)
             if max_layer == 2:
                 return spk, pot
             pot = self.conv3(sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2)))
