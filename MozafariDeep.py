@@ -294,61 +294,108 @@ class MozafariMNIST2018(nn.Module):
                 output = self.decision_map[winners[0][0]]
             return output
     
+    # Apply STDP to the convolutional layer specified by layer_idx, using the values
+    #    stored in ctx from the forward() pass.
     def stdp(self, layer_idx):
         if layer_idx == 1:
             self.stdp1(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
         if layer_idx == 2:
             self.stdp2(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
 
+    # Update the LTP(ap) and LTD(an) learning rates for the R-STDP operations
+    #    R-STDP does not employ the same adaptive learning rates that are implemented 
+    #    for the unsupervised STDP in layers 1 and 2. 
     def update_learning_rates(self, stdp_ap, stdp_an, anti_stdp_ap, anti_stdp_an):
         self.stdp3.update_all_learning_rate(stdp_ap, stdp_an)
         self.anti_stdp3.update_all_learning_rate(anti_stdp_an, anti_stdp_ap)
 
+    # Reward the network by applying STDP to reinforce the strength of the existing weights on Conv3.
     def reward(self):
         self.stdp3(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
 
+    # Punish the network by applying ANTI-STDP to reduce the weights on Conv3.
     def punish(self):
         self.anti_stdp3(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
 
+#
+# Wrap up the unsupervised training functionality that is used for Conv1 and Conv2
+#    network - The instance of the MozafariMNIST2018 network 
+#    data - MNIST training dataset with the s1c1 transformation applied
+#    layer_idx - index of the layer to train [1,2]
 def train_unsupervise(network, data, layer_idx):
+    # place the network in training mode
     network.train()
+    # process each image in the training dataset
     for i in range(len(data)):
         data_in = data[i]
         if use_cuda:
             data_in = data_in.cuda()
+        # Execute the network on the current input image i to train layer_idx
         network(data_in, layer_idx)
+        # Apply STDP to layer_idx
         network.stdp(layer_idx)
 
+#
+# Wrap up the R-STDP training functionality that is used for Conv2
+#    network - The instance of the MozafariMNIST2018 network 
+#    data - MNIST training dataset with the s1c1 transformation applied
+#    target - these are the target values we expect the network to predict
+#               for the corresponding values in the training data.
+# Return a np.array showing the fraction correct, wrong, and silent
 def train_rl(network, data, target):
+    # place the network in training mode
     network.train()
+    # declare an array to track the training performance
     perf = np.array([0,0,0]) # correct, wrong, silence
+    # process each image in the training dataset
     for i in range(len(data)):
         data_in = data[i]
         target_in = target[i]
         if use_cuda:
             data_in = data_in.cuda()
             target_in = target_in.cuda()
+        # Execute the network on the current input image i for Conv3 and capture the
+        #    output value derived from the decision map. A -1 indicates that
+        #    no winning feature maps were found for Conv3 for the current image.
         d = network(data_in, 3)
         if d != -1:
+            # output == target -> reward()
             if d == target_in:
                 perf[0]+=1
                 network.reward()
+            # output != target -> punish()
             else:
                 perf[1]+=1
                 network.punish()
+        # No winning feature map identified. No updates to Conv3 using STDP aka silence
         else:
             perf[2]+=1
     return perf/len(data)
 
+#
+# Network Test. This is identical to train_rl except it doesn't not make calls to 
+#     reward or punish the network using STDP.
+#
+#    network - The instance of the MozafariMNIST2018 network 
+#    data - MNIST training dataset with the s1c1 transformation applied
+#    target - these are the target values we expect the network to predict
+#               for the corresponding values in the training data.
+# Return a np.array showing the fraction correct, wrong, and silent
 def test(network, data, target):
+    # place the network in evaluation mode
     network.eval()
+    # declare an array to track the training performance
     perf = np.array([0,0,0]) # correct, wrong, silence
+    # process each image in the training dataset
     for i in range(len(data)):
         data_in = data[i]
         target_in = target[i]
         if use_cuda:
             data_in = data_in.cuda()
             target_in = target_in.cuda()
+        # Execute the network on the current input image i for Conv3 and capture the
+        #    output value derived from the decision map. A -1 indicates that
+        #    no winning feature maps were found for Conv3 for the current image.
         d = network(data_in, 3)
         if d != -1:
             if d == target_in:
