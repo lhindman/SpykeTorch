@@ -398,58 +398,108 @@ def test(network, data, target):
         #    no winning feature maps were found for Conv3 for the current image.
         d = network(data_in, 3)
         if d != -1:
-            if d == target_in:
-                perf[0]+=1
+            if d == target_in: 
+                perf[0]+=1 # increment num correct
             else:
-                perf[1]+=1
+                perf[1]+=1 # increment num wrong
         else:
-            perf[2]+=1
-    return perf/len(data)
+            perf[2]+=1 # increment num silent
+
+    return perf/len(data) # return array of percentages for each category
 
 class S1C1Transform:
     def __init__(self, filter, timesteps = 15):
+        # Initialize a transformer to convert the MNIST image to a torch.FloatTensor of 
+        #     shape (C x H x W) in the range [0.0, 1.0] 
         self.to_tensor = transforms.ToTensor()
+
+        # DoG Filter to use when processing the input image and for the encoding layers
         self.filter = filter
+
+        # Initialize an Intensitiy2Latency transformer to encode spikes based upon
+        #    the pixel intensity across the specified number of timesteps.
         self.temporal_transform = utils.Intensity2Latency(timesteps)
+
+        # Image Counter
         self.cnt = 0
     def __call__(self, image):
+        # Provide feedback to the user every 1000 images
         if self.cnt % 1000 == 0:
             print(self.cnt)
         self.cnt+=1
+        # Perform the actual encoding of the image to spikes
+        # 1. Use a standard transformer to conver the MNIST image to a torch.FloatTensor,
+        #        and scale the values be be in the range [0.0, 255.0]
         image = self.to_tensor(image) * 255
+
+        # 2. Unsqueeze the image to add a new dimension at the beginning of the image.
+        #    This will allow for batch processing or in this specific case the application
+        #    of the six filter kernels.
         image.unsqueeze_(0)
+
+        # 3. Execute the filter on the image. Returns a 4d tensor containing the flitered versions of the input image
+        #     dim: (minibatch=1, filter_kernels, height, width)
         image = self.filter(image)
+        # 4. Applies local normalization. on each region (of size radius*2 + 1) the mean value is computed and the
+        #      intensities will be divided by the mean value.
         image = sf.local_normalization(image, 8)
+
+        # 5. Applies intensity to latency transform. Spike waves are generated in the form of
+        #      spike bins with almost equal number of spikes
         temporal_image = self.temporal_transform(image)
+
+        # 6. Convert the resulting temporal image to simple spikes with sign() giving values [-1,0,1], 
+        #      though I do not belive there are negative number here.  Then store these in a new tensor
+        #      of type byte (uint_8) to preserve memory and increase processing efficiency.
         return temporal_image.sign().byte()
 
-kernels = [ utils.DoGKernel(3,3/9,6/9),
-            utils.DoGKernel(3,6/9,3/9),
-            utils.DoGKernel(7,7/9,14/9),
-            utils.DoGKernel(7,14/9,7/9),
-            utils.DoGKernel(13,13/9,26/9),
-            utils.DoGKernel(13,26/9,13/9)]
+
+#
+# Program starts running here
+#
+
+
+# These settings define the 6 DoG Kernels described in the paper that are used to
+#    generate the six feature maps in the Intensity to Latency encoding layer.
+kernels = [ utils.DoGKernel(window_size=3,sigma1=3/9,sigma2=6/9),
+            utils.DoGKernel(window_size=3,sigma1=6/9,sigma2=3/9),
+            utils.DoGKernel(window_size=7,sigma1=7/9,sigma2=14/9),
+            utils.DoGKernel(window_size=7,sigma1=14/9,sigma2=7/9),
+            utils.DoGKernel(window_size=13,sigma1=13/9,sigma2=26/9),
+            utils.DoGKernel(window_size=13,sigma1=26/9,sigma2=13/9)]
 filter = utils.Filter(kernels, padding = 6, thresholds = 50)
+
 s1c1 = S1C1Transform(filter)
 
+#
+# Load the MNIST datasets, apply the s1c1 transformation filter as the data sets are loaded and 
+#    leverage the CacheDataset wrapper to improve performance.
+#
 data_root = "data"
 MNIST_train = utils.CacheDataset(torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform = s1c1))
 MNIST_test = utils.CacheDataset(torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform = s1c1))
 MNIST_loader = DataLoader(MNIST_train, batch_size=1000, shuffle=False)
 MNIST_testLoader = DataLoader(MNIST_test, batch_size=len(MNIST_test), shuffle=False)
 
+#
+# Initialize the network
+#
 mozafari = MozafariMNIST2018()
 
+#
+# Setup CUDA
+#
 if torch.cuda.is_available():
     print(torch.cuda.get_device_name(0))
-
 else:
     print("CUDA is not available")
 
 if use_cuda:
     mozafari.cuda()
 
+#
 # Training The First Layer
+#
 print("Training the first layer")
 if os.path.isfile("saved_l1.net"):
     mozafari.load_state_dict(torch.load("saved_l1.net"))
@@ -463,7 +513,9 @@ else:
             print("Done!")
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l1.net")
+#
 # Training The Second Layer
+#
 print("Training the second layer")
 if os.path.isfile("saved_l2.net"):
     mozafari.load_state_dict(torch.load("saved_l2.net"))
@@ -478,7 +530,10 @@ else:
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l2.net")
 
+#
 # initial adaptive learning rates
+# Unfortunately, I cannot find the documentation on how these 
+#     adaptive learning rates work with R-STDP in Conv3.
 apr = mozafari.stdp3.learning_rate[0][0].item()
 anr = mozafari.stdp3.learning_rate[0][1].item()
 app = mozafari.anti_stdp3.learning_rate[0][1].item()
@@ -495,7 +550,9 @@ anp_adapt = ((1.0 / 10) * adaptive_int + adaptive_min) * anp
 best_train = np.array([0.0,0.0,0.0,0.0]) # correct, wrong, silence, epoch
 best_test = np.array([0.0,0.0,0.0,0.0]) # correct, wrong, silence, epoch
 
-# Training The Third Layer
+#
+# Training The Third Layer and test
+#
 print("Training the third layer")
 for epoch in range(680):
     print("Epoch #:", epoch)
