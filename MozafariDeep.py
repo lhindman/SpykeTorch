@@ -89,6 +89,10 @@ class MozafariMNIST2018(nn.Module):
         for i in range(10):
             self.decision_map.extend([i]*20)
 
+        # the ctx dictionary is used to track the values needed by STDP to update the convolutional layers 
+        #   with each iteration. It is only used during training and is overwritten with each training
+        #   iteration for Conv1, Conv2, and Conv3 and since only one layer is trained at a time it 
+        #   is not necessary to track ctx for each layer.
         self.ctx = {"input_spikes":None, "potentials":None, "output_spikes":None, "winners":None}
 
         # Counters to keep track of when to reset the learning rate for all feature maps.
@@ -98,29 +102,91 @@ class MozafariMNIST2018(nn.Module):
         self.spk_cnt2 = 0
 
     def forward(self, input, max_layer):
-        input = sf.pad(input.float(), (2,2,2,2), 0)
+        # Added padding to the input tensor by adding a 2 element boarder of 0's around each feature (channel)
+        #  This is necessary for properly handling the border conditions for the Convolutional window for Conv1
+        input = sf.pad(input=input.float(), pad=(2,2,2,2), value=0)
+
         if self.training:
+            # Passing the input tensor to conv1 implicitly calls the __call__() method inherited from nn.Module
+            #   It completes the follows steps in order:
+            #   1. It sets up the necessary hooks -- the functions we've registered to be executed before the forward pass
+            #   2. It executes the forward() method
+            #   3. It activiates the backward hooks
+            #   4. It returns the output tensor computed by the forward() method, in this case, the neuron potentials
+            # Note that is a call to the forward() method inside of snn.Convolution, not a recursive call to this 
+            #    forward() method.
             pot = self.conv1(input)
+
+            # Computes the spike-wave tensor from tensor of potentials. Applies a threshold on potentials by 
+            #     which all of the values lower or equal to the threshold becomes zero. If threshold is None, 
+            #     all the neurons emit one spike (if the potential is greater than zero) in the last time step.
+            #  pot - tensor with the thresholded potentials 
+            #  spk - tensor with [0,1] depending upon whether the corresponding potential is 0 or positive.
             spk, pot = sf.fire(potentials=pot, threshold=self.conv1_threshold, return_thresholded_potentials=True)
+
+            # From the paper, the first convolutional layer, Conv1, must be trained before the second convolutional
+            #    layer, Conv2. I'm not a big fan of having the return statements nested within the conditionals
+            #    because it makes the code difficult to follow.
             if max_layer == 1:
+                # Adaptive learning rates are mentioned briefly in the SpykeTorch paper, but the implementation is not
+                #    discussed. Every 500 iterations, the LTP learning rate (ap) is doubled and then the min operation
+                #    is performed against max_ap to place an upper bound on the LTP learning rate.  The LDP learning 
+                #    rate (an) is directly calculated from the LTP rate and then these are used to update the 
+                #    STDP learning rates for all Conv1 feature maps.
                 self.spk_cnt1 += 1
                 if self.spk_cnt1 >= 500:
                     self.spk_cnt1 = 0
                     ap = torch.tensor(self.stdp1.learning_rate[0][0].item(), device=self.stdp1.learning_rate[0][0].device) * 2
                     ap = torch.min(ap, self.max_ap)
                     an = ap * -0.75
-                    self.stdp1.update_all_learning_rate(ap.item(), an.item())
-                pot = sf.pointwise_inhibition(pot)
+                    self.stdp1.update_all_learning_rate(ap=ap.item(), an=an.item())
+
+                # Performs point-wise inhibition between feature maps. After inhibition, at most one neuron is 
+                # allowed to fire at each position, which is the neuron with the earliest spike time. If the spike times 
+                # are the same, the neuron with the maximum potential will be chosen. As a result, the potential of all of
+                # the inhibited neurons will be reset to zero.
+                pot = sf.pointwise_inhibition(thresholded_potentials=pot)
+
+                # Returns a tensor (spk) that contains the signs [-1,0,1] of the corresponding potentials from pot. At the 
+                #    moment I do not see how these can be -1, but a 1 or a 0 would seem to indicate spike or no spike.
                 spk = pot.sign()
+
+                # Finds at most kwta winners first based on the earliest spike time, then based on the maximum potential. It
+                # returns a list of winners, each in a tuple of form (feature, row, column).
                 winners = sf.get_k_winners(potentials=pot, kwta=self.conv1_kwta, inhibition_radius=self.conv1_inhibition_radius, spikes=spk)
+
+                # Store the CTX values for this iteration for use by the unsupervised STDP training step.
                 self.ctx["input_spikes"] = input
                 self.ctx["potentials"] = pot
                 self.ctx["output_spikes"] = spk
                 self.ctx["winners"] = winners
+
+                # Completed current convolutional step, return the thresholded and inhibited potentials tensor as well as
+                #    the corresponding spike tensor.
                 return spk, pot
-            spk_in = sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1))
+            
+            # There is a lot packed into the following line. First a max pooling operation is performed on the spike tensor
+            #    for each of the features from the first convolutional layer, Conv1. The kernel (window) size is 2x2 with a 
+            #    stride of 2. Max pooling essentially downsamples the feature maps by selecting and returning the maximum
+            #    value within the observation window, setting the appropriate neuron in the corresponding feature map of the
+            #    pooling layer to that max value. With a window of 2x2, the effective number of neurons in the corresponding
+            #    feature maps is reduced by a factor of 4.
+            # After the pooling operation is completed, the pooled feature maps are padded with a border of zeros, 
+            #    one neuron wide.
+            spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=2, stride=2), pad=(1,1,1,1))
+
+            # Execute the second convolutional layer on the spike-wave tensor and return the raw potential values
+            #    producted by Conv2.
             pot = self.conv2(spk_in)
-            spk, pot = sf.fire(pot, self.conv2_threshold, True)
+
+            # Apply the firing threshold to all the feature maps in Conv2 to and return the thresholded potentials
+            #    as well as the corresponding spike-wave.
+            spk, pot = sf.fire(potentials=pot, threshold=self.conv2_threshold, return_thresholded_potentials=True)
+
+            # Similar to above, train the second convolutional layer, Conv2, before training the third convolutional layer, Conv3.
+            #    The same adaptive learning rate algorithm as Conv1 is used for training Conv2. 
+            # Completed current convolutional step, return the thresholded and inhibited potentials tensor as well as
+            #    the corresponding spike tensor.
             if max_layer == 2:
                 self.spk_cnt2 += 1
                 if self.spk_cnt2 >= 500:
@@ -131,36 +197,98 @@ class MozafariMNIST2018(nn.Module):
                     self.stdp2.update_all_learning_rate(ap.item(), an.item())
                 pot = sf.pointwise_inhibition(pot)
                 spk = pot.sign()
-                winners = sf.get_k_winners(pot, self.conv2_kwta, self.conv2_inhibition_radius, spk)
+                winners = sf.get_k_winners(potentials=pot, kwta=self.conv2_kwta, inhibition_radius=self.conv2_inhibition_radius, spikes=spk)
                 self.ctx["input_spikes"] = spk_in
                 self.ctx["potentials"] = pot
                 self.ctx["output_spikes"] = spk
                 self.ctx["winners"] = winners
                 return spk, pot
-            spk_in = sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2))
+            
+            # A max pooling operation is performed on the spike tensor
+            #    for each of the features from the second convolutional layer, Conv2. The kernel (window) size is 3x3 with a 
+            #    stride of 3. Max pooling essentially downsamples the feature maps by selecting and returning the maximum
+            #    value within the observation window, setting the appropriate neuron in the corresponding feature map of the
+            #    pooling layer to that max value. With a window of 3x3, the effective number of neurons in the corresponding
+            #    feature maps is reduced by a factor of 9.
+            # After the pooling operation is completed, the pooled feature maps are padded with a border of zeros, 
+            #    two neurons wide.
+            spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=3, stride=3), pad=(2,2,2,2))
+
+            # Execute the third convolutional layer on the spike-wave tensor and return the raw potential values
+            #    producted by Conv3.
             pot = self.conv3(spk_in)
-            spk = sf.fire(pot)
-            winners = sf.get_k_winners(pot, 1, 0, spk)
+
+            # Compute the spike-wave tensor of potentials. This has different behavior than the previous two layers
+            #    because the threshold is set to None. As a result all the neurons emit one spike if the potential 
+            #    is greater than zero in the last time step. 
+            spk = sf.fire(potentials=pot,threshold=None)
+
+            # Perform the first part of the global max pooling and decision making layer and choose
+            #    a single winner across all of the features.
+            winners = sf.get_k_winners(potentials=pot, kwta=1, inhibition_radius=0, spikes=spk)
+
+            # Store the CTX values for this iteration for use by the reinforced R-STDP training step.
             self.ctx["input_spikes"] = spk_in
             self.ctx["potentials"] = pot
             self.ctx["output_spikes"] = spk
             self.ctx["winners"] = winners
+
+            # The winners list is used to index into the decision map based upon the winning feature.
+            #   The notation winners[0] specifies that we should choose the first winner from the list.
+            #   Since there is at most only 1 winner, if there is a winner it is at index 0.
+            #   Each winner consists of a tuple of the form (feature, row, column) and would be accessed
+            #   as follows:
+            #   winner[0][0] - winning feature
+            #   winner[0][1] - winning row
+            #   winner[0][2] - winning column
+            # There are 200 features in Conv3 and these correspond to the 200 elements in the decision_map 
+            #    with values in the range of [0,9]. 
             output = -1
             if len(winners) != 0:
                 output = self.decision_map[winners[0][0]]
             return output
+        
+        # If we are not training, this process becomes significantly more straight forward.
         else:
+            # Execute convolutional layer Conv1 on input spike-wave.
             pot = self.conv1(input)
+            
+            # Compute thresholded potentials and corresponding spike-wave
             spk, pot = sf.fire(pot, self.conv1_threshold, True)
+            
+            # I'm not certain why we would want to stop after the first layer
+            #    if we are not training, but here we are.
             if max_layer == 1:
                 return spk, pot
+            
+            # Perform pooling on Conv1 spike-wave with a 2x2 kernel and a stride of 2. Pad the results
+            #    with a border of zeros 1 neuron wide. The Execute the second convolutional layer, Conv2
+            #    on the padded spike-wave, producing tensor of potentials from Conv2.
             pot = self.conv2(sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1)))
+
+            # Compute thresholded potentials and corresponding spike-wave
             spk, pot = sf.fire(pot, self.conv2_threshold, True)
+            
+            # Again, I'm not certain why we would want to stop after the first layer
+            #    if we are not training, but here we are.
             if max_layer == 2:
                 return spk, pot
+            
+            # Perform pooling on Conv2 spike-wave with a 3x3 kernel and a stride of 3. Pad the results
+            #    with a border of zeros 2 neurons wide. The Execute the second convolutional layer, Conv3
+            #    on the padded spike-wave, producing tensor of potentials from Conv3.
             pot = self.conv3(sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2)))
+
+            # Compute the spike-wave tensor of potentials. This has different behavior than the previous two layers
+            #    because the threshold is set to None. As a result all the neurons emit one spike if the potential 
+            #    is greater than zero in the last time step. 
             spk = sf.fire(pot)
+
+            # Perform the first part of the global max pooling and decision making layer and choose
+            #    a single winner across all of the features.
             winners = sf.get_k_winners(pot, 1, 0, spk)
+
+            # Use the winning feature to index into the decision map to determine the output for this input image.
             output = -1
             if len(winners) != 0:
                 output = self.decision_map[winners[0][0]]
