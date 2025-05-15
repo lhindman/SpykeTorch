@@ -54,7 +54,7 @@ else:
         iter = 0
         for data,targets in MNIST_loader:
             print("Iteration", iter)
-            train_unsupervise(mozafari, data, 1)
+            train_unsupervise(mozafari, data, Layer.Conv1)
             print("Done!")
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l1.net")
@@ -70,7 +70,7 @@ else:
         iter = 0
         for data,targets in MNIST_loader:
             print("Iteration", iter)
-            train_unsupervise(mozafari, data, 2)
+            train_unsupervise(mozafari, data, Layer.Conv2)
             print("Done!")
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l2.net")

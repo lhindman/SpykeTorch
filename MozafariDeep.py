@@ -27,8 +27,22 @@ from SpykeTorch import functional as sf
 from SpykeTorch import visualization as vis
 from SpykeTorch import utils
 from torchvision import transforms
+from enum import Enum
+
+
 
 use_cuda = True
+
+
+class Layer(Enum):
+    DoG = 1
+    Conv1 = 2
+    Pool1 = 3
+    Conv2 = 4
+    Pool2 = 5
+    Conv3 = 6
+    Full = 100
+
 
 class MozafariMNIST2018(nn.Module):
     def __init__(self):
@@ -127,7 +141,7 @@ class MozafariMNIST2018(nn.Module):
             # From the paper, the first convolutional layer, Conv1, must be trained before the second convolutional
             #    layer, Conv2. I'm not a big fan of having the return statements nested within the conditionals
             #    because it makes the code difficult to follow.
-            if max_layer == 1:
+            if max_layer == Layer.Conv1:
                 # Adaptive learning rates are mentioned briefly in the SpykeTorch paper, but the implementation is not
                 #    discussed. Every 500 iterations, the LTP learning rate (ap) is doubled and then the min operation
                 #    is performed against max_ap to place an upper bound on the LTP learning rate.  The LDP learning 
@@ -175,6 +189,10 @@ class MozafariMNIST2018(nn.Module):
             #    one neuron wide.
             spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=2, stride=2), pad=(1,1,1,1))
 
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Pool1:
+                return spk_in
+
             # Execute the second convolutional layer on the spike-wave tensor and return the raw potential values
             #    producted by Conv2.
             pot = self.conv2(spk_in)
@@ -187,7 +205,7 @@ class MozafariMNIST2018(nn.Module):
             #    The same adaptive learning rate algorithm as Conv1 is used for training Conv2. 
             # Completed current convolutional step, return the thresholded and inhibited potentials tensor as well as
             #    the corresponding spike tensor.
-            if max_layer == 2:
+            if max_layer == Layer.Conv2:
                 self.spk_cnt2 += 1
                 if self.spk_cnt2 >= 500:
                     self.spk_cnt2 = 0
@@ -214,6 +232,10 @@ class MozafariMNIST2018(nn.Module):
             #    two neurons wide.
             spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=3, stride=3), pad=(2,2,2,2))
 
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Pool2:
+                return spk_in
+
             # Execute the third convolutional layer on the spike-wave tensor and return the raw potential values
             #    producted by Conv3.
             pot = self.conv3(spk_in)
@@ -222,6 +244,10 @@ class MozafariMNIST2018(nn.Module):
             #    because the threshold is set to None. As a result all the neurons emit one spike if the potential 
             #    is greater than zero in the last time step. 
             spk = sf.fire(potentials=pot,threshold=None)
+
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Conv3:
+                return spk
 
             # Perform the first part of the global max pooling and decision making layer and choose
             #    a single winner across all of the features.
@@ -256,33 +282,49 @@ class MozafariMNIST2018(nn.Module):
             # Compute thresholded potentials and corresponding spike-wave
             spk, pot = sf.fire(pot, self.conv1_threshold, True)
             
-            # I'm not certain why we would want to stop after the first layer
-            #    if we are not training, but here we are.
-            if max_layer == 1:
+            # This is useful for visualization of the output
+            if max_layer == Layer.Conv1:
                 return spk, pot
             
             # Perform pooling on Conv1 spike-wave with a 2x2 kernel and a stride of 2. Pad the results
             #    with a border of zeros 1 neuron wide. The Execute the second convolutional layer, Conv2
             #    on the padded spike-wave, producing tensor of potentials from Conv2.
-            pot = self.conv2(sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1)))
+
+            pool1_spike_wave = sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1))
+
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Pool1:
+                return pool1_spike_wave
+
+            pot = self.conv2(pool1_spike_wave)
 
             # Compute thresholded potentials and corresponding spike-wave
             spk, pot = sf.fire(pot, self.conv2_threshold, True)
             
             # Again, I'm not certain why we would want to stop after the first layer
             #    if we are not training, but here we are.
-            if max_layer == 2:
+            if max_layer == Layer.Conv2:
                 return spk, pot
             
             # Perform pooling on Conv2 spike-wave with a 3x3 kernel and a stride of 3. Pad the results
             #    with a border of zeros 2 neurons wide. The Execute the second convolutional layer, Conv3
             #    on the padded spike-wave, producing tensor of potentials from Conv3.
-            pot = self.conv3(sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2)))
+            pool2_spike_wave = sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2))
+
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Pool2:
+                return pool2_spike_wave
+
+            pot = self.conv3(pool2_spike_wave)
 
             # Compute the spike-wave tensor of potentials. This has different behavior than the previous two layers
             #    because the threshold is set to None. As a result all the neurons emit one spike if the potential 
             #    is greater than zero in the last time step. 
             spk = sf.fire(pot)
+
+            # Instrumentation added by LH for layer visualization
+            if max_layer == Layer.Conv3:
+                return spk
 
             # Perform the first part of the global max pooling and decision making layer and choose
             #    a single winner across all of the features.
