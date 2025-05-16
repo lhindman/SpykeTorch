@@ -41,6 +41,7 @@ class Layer(Enum):
     Conv2 = 4
     Pool2 = 5
     Conv3 = 6
+    Winner = 7
     Full = 100
 
 
@@ -324,11 +325,14 @@ class MozafariMNIST2018(nn.Module):
 
             # Instrumentation added by LH for layer visualization
             if max_layer == Layer.Conv3:
-                return spk
+                return pot
 
             # Perform the first part of the global max pooling and decision making layer and choose
             #    a single winner across all of the features.
             winners = sf.get_k_winners(pot, 1, 0, spk)
+
+            if max_layer == Layer.Winner:
+                return winners
 
             # Use the winning feature to index into the decision map to determine the output for this input image.
             output = -1
