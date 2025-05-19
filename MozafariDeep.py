@@ -343,9 +343,9 @@ class MozafariMNIST2018(nn.Module):
     # Apply STDP to the convolutional layer specified by layer_idx, using the values
     #    stored in ctx from the forward() pass.
     def stdp(self, layer_idx):
-        if layer_idx == 1:
+        if layer_idx == Layer.Conv1:
             self.stdp1(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
-        if layer_idx == 2:
+        if layer_idx == Layer.Conv2:
             self.stdp2(self.ctx["input_spikes"], self.ctx["potentials"], self.ctx["output_spikes"], self.ctx["winners"])
 
     # Update the LTP(ap) and LTD(an) learning rates for the R-STDP operations
