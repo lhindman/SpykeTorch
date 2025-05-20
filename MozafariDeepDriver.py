@@ -77,8 +77,8 @@ else:
 
 #
 # initial adaptive learning rates
-# Unfortunately, I cannot find the documentation on how these 
-#     adaptive learning rates work with R-STDP in Conv3.
+# A short description of this can be found in section 2.6 of Bio-inspired digit recognition
+#     reward modulated spike-timing-dependent plasticity in deep convolutional networks.
 apr = mozafari.stdp3.learning_rate[0][0].item()
 anr = mozafari.stdp3.learning_rate[0][1].item()
 app = mozafari.anti_stdp3.learning_rate[0][1].item()
