@@ -188,11 +188,14 @@ class MozafariMNIST2018(nn.Module):
             #    feature maps is reduced by a factor of 4.
             # After the pooling operation is completed, the pooled feature maps are padded with a border of zeros, 
             #    one neuron wide.
-            spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=2, stride=2), pad=(1,1,1,1))
+            spk_pool = sf.pooling(input=spk, kernel_size=2, stride=2)
 
             # Instrumentation added by LH for layer visualization
             if max_layer == Layer.Pool1:
-                return spk_in
+                return spk_pool
+
+            spk_in = sf.pad(input=spk_pool, pad=(1,1,1,1))
+
 
             # Execute the second convolutional layer on the spike-wave tensor and return the raw potential values
             #    producted by Conv2.
@@ -231,11 +234,13 @@ class MozafariMNIST2018(nn.Module):
             #    feature maps is reduced by a factor of 9.
             # After the pooling operation is completed, the pooled feature maps are padded with a border of zeros, 
             #    two neurons wide.
-            spk_in = sf.pad(input=sf.pooling(input=spk, kernel_size=3, stride=3), pad=(2,2,2,2))
+            spk_pool = sf.pooling(input=spk, kernel_size=3, stride=3)
 
             # Instrumentation added by LH for layer visualization
             if max_layer == Layer.Pool2:
-                return spk_in
+                return spk_pool
+            
+            spk_in = sf.pad(input=spk_pool, pad=(2,2,2,2))
 
             # Execute the third convolutional layer on the spike-wave tensor and return the raw potential values
             #    producted by Conv3.
@@ -291,13 +296,13 @@ class MozafariMNIST2018(nn.Module):
             #    with a border of zeros 1 neuron wide. The Execute the second convolutional layer, Conv2
             #    on the padded spike-wave, producing tensor of potentials from Conv2.
 
-            pool1_spike_wave = sf.pad(sf.pooling(spk, 2, 2), (1,1,1,1))
+            pool1_spike_wave = sf.pooling(spk, 2, 2)
 
             # Instrumentation added by LH for layer visualization
             if max_layer == Layer.Pool1:
                 return pool1_spike_wave
 
-            pot = self.conv2(pool1_spike_wave)
+            pot = self.conv2(sf.pad(pool1_spike_wave, (1,1,1,1)))
 
             # Compute thresholded potentials and corresponding spike-wave
             spk, pot = sf.fire(pot, self.conv2_threshold, True)
@@ -310,13 +315,13 @@ class MozafariMNIST2018(nn.Module):
             # Perform pooling on Conv2 spike-wave with a 3x3 kernel and a stride of 3. Pad the results
             #    with a border of zeros 2 neurons wide. The Execute the second convolutional layer, Conv3
             #    on the padded spike-wave, producing tensor of potentials from Conv3.
-            pool2_spike_wave = sf.pad(sf.pooling(spk, 3, 3), (2,2,2,2))
+            pool2_spike_wave = sf.pooling(spk, 3, 3)
 
             # Instrumentation added by LH for layer visualization
             if max_layer == Layer.Pool2:
                 return pool2_spike_wave
 
-            pot = self.conv3(pool2_spike_wave)
+            pot = self.conv3(sf.pad(pool2_spike_wave,(2,2,2,2)))
 
             # Compute the spike-wave tensor of potentials. This has different behavior than the previous two layers
             #    because the threshold is set to None. As a result all the neurons emit one spike if the potential 
