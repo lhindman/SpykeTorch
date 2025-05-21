@@ -25,21 +25,18 @@ MNIST_loader = DataLoader(MNIST_train, batch_size=1000, shuffle=False)
 MNIST_testLoader = DataLoader(MNIST_test, batch_size=len(MNIST_test), shuffle=False)
 
 #
+# Setup Processing Device
+#   ['cuda','mps','cpu']
+#
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+device = check_set_gpu()
+
+#
 # Initialize the network
 #
 mozafari = MozafariMNIST2018()
-
-#
-# Setup CUDA
-#
-if torch.cuda.is_available():
-    print(torch.cuda.get_device_name(0))
-    if use_cuda:
-        print("Activating CUDA on network")
-        mozafari.cuda()
-
-else:
-    print("CUDA is not available")
+mozafari.to(device)
 
 
 #
@@ -47,14 +44,14 @@ else:
 #
 print("Training the first layer")
 if os.path.isfile("saved_l1.net"):
-    mozafari.load_state_dict(torch.load("saved_l1.net"))
+    mozafari.load_state_dict(torch.load("saved_l1.net",weights_only=False,map_location=device))
 else:
     for epoch in range(2):
         print("Epoch", epoch)
         iter = 0
         for data,targets in MNIST_loader:
             print("Iteration", iter)
-            train_unsupervise(mozafari, data, Layer.Conv1)
+            train_unsupervise(mozafari, data, Layer.Conv1, device=device)
             print("Done!")
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l1.net")
@@ -63,14 +60,14 @@ else:
 #
 print("Training the second layer")
 if os.path.isfile("saved_l2.net"):
-    mozafari.load_state_dict(torch.load("saved_l2.net"))
+    mozafari.load_state_dict(torch.load("saved_l2.net",weights_only=False,map_location=device))
 else:
     for epoch in range(4):
         print("Epoch", epoch)
         iter = 0
         for data,targets in MNIST_loader:
             print("Iteration", iter)
-            train_unsupervise(mozafari, data, Layer.Conv2)
+            train_unsupervise(mozafari, data, Layer.Conv2, device=device)
             print("Done!")
             iter+=1
     torch.save(mozafari.state_dict(), "saved_l2.net")
@@ -103,7 +100,7 @@ for epoch in range(680):
     print("Epoch #:", epoch)
     perf_train = np.array([0.0,0.0,0.0])
     for data,targets in MNIST_loader:
-        perf_train_batch = train_rl(mozafari, data, targets)
+        perf_train_batch = train_rl(mozafari, data, targets, device=device)
         print(perf_train_batch)
         #update adaptive learning rates
         apr_adapt = apr * (perf_train_batch[1] * adaptive_int + adaptive_min)

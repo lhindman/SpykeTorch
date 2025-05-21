@@ -12,9 +12,6 @@
 #################################################################################
 
 import os
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -28,10 +25,6 @@ from SpykeTorch import visualization as vis
 from SpykeTorch import utils
 from torchvision import transforms
 from enum import Enum
-
-
-
-use_cuda = True
 
 
 class Layer(Enum):
@@ -373,14 +366,13 @@ class MozafariMNIST2018(nn.Module):
 #    network - The instance of the MozafariMNIST2018 network 
 #    data - MNIST training dataset with the s1c1 transformation applied
 #    layer_idx - index of the layer to train [1,2]
-def train_unsupervise(network, data, layer_idx):
+def train_unsupervise(network, data, layer_idx, device):
     # place the network in training mode
     network.train()
     # process each image in the training dataset
     for i in range(len(data)):
         data_in = data[i]
-        if use_cuda:
-            data_in = data_in.cuda()
+        data_in = data_in.to(device)
         # Execute the network on the current input image i to train layer_idx
         network(data_in, layer_idx)
         # Apply STDP to layer_idx
@@ -393,7 +385,7 @@ def train_unsupervise(network, data, layer_idx):
 #    target - these are the target values we expect the network to predict
 #               for the corresponding values in the training data.
 # Return a np.array showing the fraction correct, wrong, and silent
-def train_rl(network, data, target):
+def train_rl(network, data, target, device):
     # place the network in training mode
     network.train()
     # declare an array to track the training performance
@@ -402,9 +394,9 @@ def train_rl(network, data, target):
     for i in range(len(data)):
         data_in = data[i]
         target_in = target[i]
-        if use_cuda:
-            data_in = data_in.cuda()
-            target_in = target_in.cuda()
+
+        data_in = data_in.to(device)
+        target_in = target_in.to(device)
         # Execute the network on the current input image i for Conv3 and capture the
         #    output value derived from the decision map. A -1 indicates that
         #    no winning feature maps were found for Conv3 for the current image.
@@ -432,7 +424,7 @@ def train_rl(network, data, target):
 #    target - these are the target values we expect the network to predict
 #               for the corresponding values in the training data.
 # Return a np.array showing the fraction correct, wrong, and silent
-def test(network, data, target):
+def test(network, data, target, device):
     # place the network in evaluation mode
     network.eval()
     # declare an array to track the training performance
@@ -441,9 +433,9 @@ def test(network, data, target):
     for i in range(len(data)):
         data_in = data[i]
         target_in = target[i]
-        if use_cuda:
-            data_in = data_in.cuda()
-            target_in = target_in.cuda()
+
+        data_in = data_in.to(device)
+        target_in = target_in.to(device)
         # Execute the network on the current input image i for Conv3 and capture the
         #    output value derived from the decision map. A -1 indicates that
         #    no winning feature maps were found for Conv3 for the current image.
@@ -505,129 +497,18 @@ class S1C1Transform:
         return temporal_image.sign().byte()
 
 
-#
-# Program starts running here
-#
+def check_set_gpu(override=None):
+    if override is None:
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+        elif torch.backends.mps.is_available():
+            device = torch.device('mps')
+            print(f"Using MPS: {torch.backends.mps.is_available()}")
+        else:
+            device = torch.device('cpu')
+            print(f"Using CPU: {torch.device('cpu')}")
+    else:
+        device = torch.device(override)
+    return device
 
-
-# # These settings define the 6 DoG Kernels described in the paper that are used to
-# #    generate the six feature maps in the Intensity to Latency encoding layer.
-# kernels = [ utils.DoGKernel(window_size=3,sigma1=3/9,sigma2=6/9),
-#             utils.DoGKernel(window_size=3,sigma1=6/9,sigma2=3/9),
-#             utils.DoGKernel(window_size=7,sigma1=7/9,sigma2=14/9),
-#             utils.DoGKernel(window_size=7,sigma1=14/9,sigma2=7/9),
-#             utils.DoGKernel(window_size=13,sigma1=13/9,sigma2=26/9),
-#             utils.DoGKernel(window_size=13,sigma1=26/9,sigma2=13/9)]
-# filter = utils.Filter(kernels, padding = 6, thresholds = 50)
-
-# s1c1 = S1C1Transform(filter)
-
-# #
-# # Load the MNIST datasets, apply the s1c1 transformation filter as the data sets are loaded and 
-# #    leverage the CacheDataset wrapper to improve performance.
-# #
-# data_root = "data"
-# MNIST_train = utils.CacheDataset(torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform = s1c1))
-# MNIST_test = utils.CacheDataset(torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform = s1c1))
-# MNIST_loader = DataLoader(MNIST_train, batch_size=1000, shuffle=False)
-# MNIST_testLoader = DataLoader(MNIST_test, batch_size=len(MNIST_test), shuffle=False)
-
-# #
-# # Initialize the network
-# #
-# mozafari = MozafariMNIST2018()
-
-# #
-# # Setup CUDA
-# #
-# if torch.cuda.is_available():
-#     print(torch.cuda.get_device_name(0))
-# else:
-#     print("CUDA is not available")
-
-# if use_cuda:
-#     mozafari.cuda()
-
-# #
-# # Training The First Layer
-# #
-# print("Training the first layer")
-# if os.path.isfile("saved_l1.net"):
-#     mozafari.load_state_dict(torch.load("saved_l1.net"))
-# else:
-#     for epoch in range(2):
-#         print("Epoch", epoch)
-#         iter = 0
-#         for data,targets in MNIST_loader:
-#             print("Iteration", iter)
-#             train_unsupervise(mozafari, data, 1)
-#             print("Done!")
-#             iter+=1
-#     torch.save(mozafari.state_dict(), "saved_l1.net")
-# #
-# # Training The Second Layer
-# #
-# print("Training the second layer")
-# if os.path.isfile("saved_l2.net"):
-#     mozafari.load_state_dict(torch.load("saved_l2.net"))
-# else:
-#     for epoch in range(4):
-#         print("Epoch", epoch)
-#         iter = 0
-#         for data,targets in MNIST_loader:
-#             print("Iteration", iter)
-#             train_unsupervise(mozafari, data, 2)
-#             print("Done!")
-#             iter+=1
-#     torch.save(mozafari.state_dict(), "saved_l2.net")
-
-# #
-# # initial adaptive learning rates
-# # Unfortunately, I cannot find the documentation on how these 
-# #     adaptive learning rates work with R-STDP in Conv3.
-# apr = mozafari.stdp3.learning_rate[0][0].item()
-# anr = mozafari.stdp3.learning_rate[0][1].item()
-# app = mozafari.anti_stdp3.learning_rate[0][1].item()
-# anp = mozafari.anti_stdp3.learning_rate[0][0].item()
-
-# adaptive_min = 0
-# adaptive_int = 1
-# apr_adapt = ((1.0 - 1.0 / 10) * adaptive_int + adaptive_min) * apr
-# anr_adapt = ((1.0 - 1.0 / 10) * adaptive_int + adaptive_min) * anr
-# app_adapt = ((1.0 / 10) * adaptive_int + adaptive_min) * app
-# anp_adapt = ((1.0 / 10) * adaptive_int + adaptive_min) * anp
-
-# # perf
-# best_train = np.array([0.0,0.0,0.0,0.0]) # correct, wrong, silence, epoch
-# best_test = np.array([0.0,0.0,0.0,0.0]) # correct, wrong, silence, epoch
-
-# #
-# # Training The Third Layer and test
-# #
-# print("Training the third layer")
-# for epoch in range(680):
-#     print("Epoch #:", epoch)
-#     perf_train = np.array([0.0,0.0,0.0])
-#     for data,targets in MNIST_loader:
-#         perf_train_batch = train_rl(mozafari, data, targets)
-#         print(perf_train_batch)
-#         #update adaptive learning rates
-#         apr_adapt = apr * (perf_train_batch[1] * adaptive_int + adaptive_min)
-#         anr_adapt = anr * (perf_train_batch[1] * adaptive_int + adaptive_min)
-#         app_adapt = app * (perf_train_batch[0] * adaptive_int + adaptive_min)
-#         anp_adapt = anp * (perf_train_batch[0] * adaptive_int + adaptive_min)
-#         mozafari.update_learning_rates(apr_adapt, anr_adapt, app_adapt, anp_adapt)
-#         perf_train += perf_train_batch
-#     perf_train /= len(MNIST_loader)
-#     if best_train[0] <= perf_train[0]:
-#         best_train = np.append(perf_train, epoch)
-#     print("Current Train:", perf_train)
-#     print("   Best Train:", best_train)
-
-#     for data,targets in MNIST_testLoader:
-#         perf_test = test(mozafari, data, targets)
-#         if best_test[0] <= perf_test[0]:
-#             best_test = np.append(perf_test, epoch)
-#             torch.save(mozafari.state_dict(), "saved.net")
-#         print(" Current Test:", perf_test)
-#         print("    Best Test:", best_test)
