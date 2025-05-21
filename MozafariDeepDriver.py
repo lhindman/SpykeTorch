@@ -116,7 +116,7 @@ for epoch in range(680):
     print("   Best Train:", best_train)
 
     for data,targets in MNIST_testLoader:
-        perf_test = test(mozafari, data, targets)
+        perf_test = test(mozafari, data, targets, device=device)
         if best_test[0] <= perf_test[0]:
             best_test = np.append(perf_test, epoch)
             torch.save(mozafari.state_dict(), "saved.net")
