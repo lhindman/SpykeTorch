@@ -39,3 +39,24 @@ Current Train: [0.98001667 0.01998333 0.        ]
         Signals delivered: 0
         Page size (bytes): 4096
         Exit status: 0
+
+
+## eng402001
+
+### Configuration
+Apple Macbook Pro 14"
+Processor: Apple M4 Pro 14 core (10 performance 4 efficiency)
+RAM:  48GB
+Storage: 1TB NVME SSD
+Video: Metal Support:  Metal 3
+GPU: 20 cores
+
+### Simulation Accuracy
+Current Train: [0.98301667 0.01698333 0.        ]
+   Best Train: [9.83316667e-01 1.66833333e-02 0.00000000e+00 6.64000000e+02]
+ Current Test: [0.9652 0.0348 0.    ]
+    Best Test: [9.669e-01 3.310e-02 0.000e+00 6.370e+02]
+
+### Simulation Time
+python MozafariDeepDriver.py  172501.26s user 65171.78s system 73% cpu 89:14:00.57 total
+
