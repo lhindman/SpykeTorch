@@ -60,3 +60,25 @@ Current Train: [0.98301667 0.01698333 0.        ]
 ### Simulation Time
 python MozafariDeepDriver.py  172501.26s user 65171.78s system 73% cpu 89:14:00.57 total
 
+## eng402347
+
+### Configuration
+Apple Mac Mini
+Processor:  Apple M1 8 cores (4 performance 4 efficiency)
+RAM: 16GB
+Storage: 1TB NVME SSD
+Metal Support: Metal 3
+GPU: 8 cores
+
+### Simulation Accuracy
+In progress...
+Current Train: [0.97318333 0.02681667 0.        ]
+   Best Train: [9.73183333e-01 2.68166667e-02 0.00000000e+00 1.11000000e+02]
+ Current Test: [0.9595 0.0405 0.    ]
+    Best Test: [9.595e-01 4.050e-02 0.000e+00 1.110e+02]
+Epoch #: 112
+
+### Simulation Time
+In progress...
+Today is Wednesday May 28th and the simulation has been running since May 22nd and is is only on epoch 112 of 680.
+
