@@ -82,3 +82,25 @@ Epoch #: 112
 In progress...
 Today is Wednesday May 28th and the simulation has been running since May 22nd and is is only on epoch 112 of 680.
 
+## Wind
+
+### Configuration
+Dell 15" XPS
+
+Processor: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz with 6 cores
+Memory: 32 GB
+Storage: 1TB NVME SSD
+GPU: Intel (with NVidia but CUDA note working correctly)
+
+### Simulation Accuracy
+Current Train: [0.97465 0.02535 0.     ]
+   Best Train: [9.74933333e-01 2.50666667e-02 0.00000000e+00 2.31000000e+02]
+ Current Test: [0.9612 0.0388 0.    ]
+    Best Test: [9.612e-01 3.880e-02 0.000e+00 2.360e+02]
+Epoch #: 237
+
+
+### Simulation Time
+In progress...
+Today is Wednesday May 28th and the simulation has been running since May 22nd and is is only on epoch 237 of 680.
+
