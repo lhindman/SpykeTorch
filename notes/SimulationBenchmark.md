@@ -104,3 +104,23 @@ Epoch #: 237
 In progress...
 Today is Wednesday May 28th and the simulation has been running since May 22nd and is is only on epoch 237 of 680.
 
+## COEN-CASSIA
+### Configuration
+
+OS: RedHat Linux
+Memory: 768GB
+GPU: NVIDIA Corporation AD102GL [L40S] (rev a1)
+CPU: AMD EPYC 9554 64-Core Processor x 2
+
+### Simulation Accuracy
+Current Train: [0.98378333 0.01621667 0.        ]
+   Best Train: [9.84633333e-01 1.53666667e-02 0.00000000e+00 6.66000000e+02]
+ Current Test: [0.9658 0.0342 0.    ]
+    Best Test: [9.674e-01 3.260e-02 0.000e+00 6.590e+02]
+
+
+### Simulation Time
+real    520m12.241s
+user    2185m30.134s
+sys     33m35.730s
+[lukehindman@coen-cassia SpykeTorch]$ ∂
