@@ -123,4 +123,3 @@ Current Train: [0.98378333 0.01621667 0.        ]
 real    520m12.241s
 user    2185m30.134s
 sys     33m35.730s
-[lukehindman@coen-cassia SpykeTorch]$ ∂
